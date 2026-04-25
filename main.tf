@@ -96,7 +96,7 @@ module "s3" {
   source = "./modules/s3"
 
   environment = var.environment
-  bucket_name = "my-ui-aro-fix"
+  bucket_name = "my-ui-aro-fixed01"
 }
 
 # ── IAM ────────────────────────────────────────────────────────────────────
