@@ -1,10 +1,7 @@
-##############################################################################
-#  Variables — all values with defaults; override via tfvars or CI inputs
-##############################################################################
-
 variable "environment" {
   description = "Deployment environment (dev | staging | prod)"
   type        = string
+  default     = "dev"
   validation {
     condition     = contains(["dev", "staging", "prod"], var.environment)
     error_message = "environment must be dev, staging, or prod."
@@ -12,43 +9,41 @@ variable "environment" {
 }
 
 variable "region" {
-  description = "AWS region to deploy resources into"
+  description = "AWS region"
   type        = string
   default     = "ap-south-1"
 }
 
 variable "project_name" {
-  description = "Short project identifier used as a prefix in resource names"
+  description = "Project name prefix for resources"
   type        = string
   default     = "myapp"
 }
 
 variable "enabled_services" {
-  description = "Comma-separated list of services to deploy (e.g. 'vpc,ec2,rds')"
+  description = "Comma-separated services to deploy (vpc,ec2,rds,s3,iam,lambda,ecs)"
   type        = string
   default     = "vpc"
 }
 
-# ── VPC ────────────────────────────────────────────────────────────────────
 variable "vpc_cidr" {
-  description = "CIDR block for the VPC"
+  description = "VPC CIDR block"
   type        = string
   default     = "10.0.0.0/16"
 }
 
 variable "existing_vpc_id" {
-  description = "Use an existing VPC instead of creating one (when vpc not in enabled_services)"
+  description = "Existing VPC ID (when not deploying a new VPC)"
   type        = string
   default     = ""
 }
 
-variable "existing_subnet_ids" {
-  description = "Existing subnet IDs to use when not deploying a new VPC"
-  type        = list(string)
-  default     = []
+variable "existing_subnet_id" {
+  description = "Existing subnet ID (when not deploying a new VPC)"
+  type        = string
+  default     = ""
 }
 
-# ── EC2 ────────────────────────────────────────────────────────────────────
 variable "ec2_instance_type" {
   description = "EC2 instance type"
   type        = string
@@ -56,26 +51,13 @@ variable "ec2_instance_type" {
 }
 
 variable "ec2_instance_count" {
-  description = "Number of EC2 instances to launch"
+  description = "Number of EC2 instances"
   type        = number
   default     = 1
 }
 
-# ── RDS ────────────────────────────────────────────────────────────────────
 variable "rds_instance_class" {
   description = "RDS instance class"
   type        = string
   default     = "db.t3.micro"
-}
-
-variable "rds_engine" {
-  description = "RDS database engine"
-  type        = string
-  default     = "postgres"
-}
-
-variable "rds_db_name" {
-  description = "Initial database name"
-  type        = string
-  default     = "appdb"
 }
