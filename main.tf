@@ -16,11 +16,11 @@ terraform {
 
   # S3 backend — update bucket/region to match your setup
   backend "s3" {
-    bucket         = "your-terraform-state-bucket"    # ← change this
+    bucket         = "terraform-ui-tfstate"    # ← change this
     key            = "dev/terraform.tfstate"           # overridden by -backend-config in CI
     region         = "ap-south-1"                     # ← change this
     encrypt        = true
-    dynamodb_table = "terraform-state-lock"           # optional, for state locking
+    #dynamodb_table = "terraform-state-lock"           # optional, for state locking
   }
 }
 
