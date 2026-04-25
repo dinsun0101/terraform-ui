@@ -96,7 +96,7 @@ module "s3" {
   source = "./modules/s3"
 
   environment = var.environment
-  bucket_name = "my-tf-au-bkt02"
+  bucket_name = "my-tf-au-dinesh"
 }
 
 # ── IAM ────────────────────────────────────────────────────────────────────
