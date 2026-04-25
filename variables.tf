@@ -79,10 +79,3 @@ variable "rds_db_name" {
   type        = string
   default     = "appdb"
 }
-
-#-----------S3---------------------------
-
-variable "bucket_name" {
-  type = string
-  default = "my-tf-ui-bucket"
-}
