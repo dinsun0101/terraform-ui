@@ -2,7 +2,9 @@
 *.tfstate
 *.tfstate.backup
 *.tfvars
+!example.tfvars
 plan.out
+destroy-plan.out
 .terraform.lock.hcl
 *.zip
 .DS_Store
