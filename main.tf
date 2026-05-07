@@ -96,7 +96,7 @@ module "s3" {
   source = "./modules/s3"
 
   environment = var.environment
-  bucket_name = "hello-dinesh-7-may"
+  bucket_name = "hello-testui-7-may"
 }
 
 # ── IAM ────────────────────────────────────────────────────────────────────
