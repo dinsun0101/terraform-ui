@@ -1,4 +1,20 @@
-name: Terraform Infra Deploy
+##############################################################################
+#  TerraConsole — terraform-deploy.yml
+#  Single workflow with sequential jobs and stage dependencies.
+#
+#  PIPELINE FOR plan:
+#    prerequisites -> validate -> plan
+#
+#  PIPELINE FOR apply:
+#    prerequisites -> validate -> plan -> apply
+#
+#  PIPELINE FOR destroy:
+#    prerequisites -> validate -> destroy-plan -> destroy
+#
+#  Required GitHub Secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+##############################################################################
+
+name: Terraform Deploy
 
 on:
   workflow_dispatch:
@@ -28,11 +44,11 @@ on:
         options: [plan, apply, destroy]
         default: plan
       services_to_destroy:
-        description: '[destroy] Services to delete (blank = same as services)'
+        description: '[destroy] Services to delete e.g. s3,ec2 (blank = same as services)'
         required: false
         default: ''
       all_deployed_services:
-        description: '[destroy] All currently deployed services in this env'
+        description: '[destroy] All currently deployed services e.g. vpc,ec2,s3'
         required: false
         default: ''
       role_arn:
@@ -52,6 +68,7 @@ jobs:
 # ============================================================================
 #  JOB 1 — prerequisites
 #  Validates inputs, checks secrets and tf files before anything runs.
+#  ALL other jobs depend on this one.
 # ============================================================================
   prerequisites:
     name: 'Prerequisites'
@@ -84,21 +101,21 @@ jobs:
       - name: Check AWS secrets
         run: |
           if [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ]; then
-            echo "AWS_ACCESS_KEY_ID secret not set"; exit 1
+            echo "AWS_ACCESS_KEY_ID secret not set in GitHub repo settings"; exit 1
           fi
           if [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ]; then
-            echo "AWS_SECRET_ACCESS_KEY secret not set"; exit 1
+            echo "AWS_SECRET_ACCESS_KEY secret not set in GitHub repo settings"; exit 1
           fi
           echo "AWS credentials configured"
 
-      - name: Check Terraform files
+      - name: Check Terraform files exist
         run: |
-          ls ${{ env.TF_DIR }}/*.tf || { echo "No .tf files found"; exit 1; }
+          ls ${{ env.TF_DIR }}/*.tf || { echo "No .tf files found in repo root"; exit 1; }
           echo "Terraform files found"
 
-      - name: Prod destroy warning
+      - name: Production destroy warning
         if: ${{ github.event.inputs.action == 'destroy' && github.event.inputs.environment == 'prod' }}
-        run: echo "WARNING - Destroying resources in PRODUCTION"
+        run: echo "WARNING - Destroying resources in PRODUCTION environment"
 
       - name: Set outputs
         id: out
@@ -107,9 +124,9 @@ jobs:
           [ -z "$D" ] && D="${{ github.event.inputs.services }}"
           A="${{ github.event.inputs.all_deployed_services }}"
           [ -z "$A" ] && A="${{ github.event.inputs.services }}"
-          echo "tf_version=${{ github.event.inputs.tf_version }}"  >> $GITHUB_OUTPUT
-          echo "services_to_destroy=$D"                             >> $GITHUB_OUTPUT
-          echo "all_deployed_services=$A"                           >> $GITHUB_OUTPUT
+          echo "tf_version=${{ github.event.inputs.tf_version }}" >> $GITHUB_OUTPUT
+          echo "services_to_destroy=$D"                            >> $GITHUB_OUTPUT
+          echo "all_deployed_services=$A"                          >> $GITHUB_OUTPUT
 
       - name: Job summary
         run: |
@@ -157,9 +174,7 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}
-        run: |
-          terraform init -input=false -no-color \
-            -backend-config="key=${{ github.event.inputs.environment }}/terraform.tfstate"
+        run: terraform init -input=false -no-color
 
       - name: Select workspace
         working-directory: ${{ env.TF_DIR }}
@@ -170,11 +185,11 @@ jobs:
           else
             terraform workspace select "$WS" 2>/dev/null || terraform workspace new "$WS"
           fi
-          echo "Workspace: $(terraform workspace show)"
+          echo "Active workspace: $(terraform workspace show)"
 
       - name: Terraform Format check
         working-directory: ${{ env.TF_DIR }}
-        run: terraform fmt -check -recursive -no-color || echo "Format warning - run terraform fmt"
+        run: terraform fmt -check -recursive -no-color || echo "Format warning - run terraform fmt locally"
 
       - name: Terraform Validate
         working-directory: ${{ env.TF_DIR }}
@@ -191,7 +206,7 @@ jobs:
 
 # ============================================================================
 #  JOB 3 — plan
-#  terraform plan — only for plan/apply actions
+#  terraform plan - only for plan/apply actions
 #  Depends on: validate
 # ============================================================================
   plan:
@@ -220,9 +235,7 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}
-        run: |
-          terraform init -input=false -no-color \
-            -backend-config="key=${{ github.event.inputs.environment }}/terraform.tfstate"
+        run: terraform init -input=false -no-color
 
       - name: Select workspace
         working-directory: ${{ env.TF_DIR }}
@@ -241,7 +254,8 @@ jobs:
             -input=false \
             -no-color \
             2>&1 | tee plan-output.txt
-          grep -E "^Plan:|to add|to change|to destroy|No changes" plan-output.txt | tail -3 || true
+          echo "--- Plan Summary ---"
+          grep -E "to add|to change|to destroy|No changes|Plan:" plan-output.txt | tail -5 || true
 
       - name: Upload plan artifact
         uses: actions/upload-artifact@v4
@@ -256,14 +270,15 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: |
           echo "## Plan" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "```" >> $GITHUB_STEP_SUMMARY
           grep -E "to add|to change|to destroy|No changes|Plan:" plan-output.txt | tail -5 >> $GITHUB_STEP_SUMMARY || true
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "```" >> $GITHUB_STEP_SUMMARY
 
 # ============================================================================
 #  JOB 4 — apply
-#  Downloads plan artifact and runs terraform apply
-#  Depends on: plan (only runs if plan succeeded)
+#  Downloads the plan artifact and runs terraform apply
+#  Only runs when action = apply AND plan succeeded
+#  Depends on: plan
 # ============================================================================
   apply:
     name: 'Apply'
@@ -291,9 +306,7 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}
-        run: |
-          terraform init -input=false -no-color \
-            -backend-config="key=${{ github.event.inputs.environment }}/terraform.tfstate"
+        run: terraform init -input=false -no-color
 
       - name: Select workspace
         working-directory: ${{ env.TF_DIR }}
@@ -331,7 +344,8 @@ jobs:
 
 # ============================================================================
 #  JOB 5 — destroy-plan
-#  Generates a destroy preview showing ONLY the targeted resources.
+#  Shows a preview of ONLY the targeted resources that will be deleted.
+#  Runs only when action = destroy AND validate succeeded.
 #  Depends on: validate
 # ============================================================================
   destroy-plan:
@@ -360,9 +374,7 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}
-        run: |
-          terraform init -input=false -no-color \
-            -backend-config="key=${{ github.event.inputs.environment }}/terraform.tfstate"
+        run: terraform init -input=false -no-color
 
       - name: Select workspace
         working-directory: ${{ env.TF_DIR }}
@@ -377,58 +389,77 @@ jobs:
           DESTROY_SVCS="${{ needs.prerequisites.outputs.services_to_destroy }}"
           ALL_SVCS="${{ needs.prerequisites.outputs.all_deployed_services }}"
 
-          echo "=== DEBUG ==="
-          echo "DESTROY_SVCS : $DESTROY_SVCS"
-          echo "ALL_SVCS     : $ALL_SVCS"
-          echo "=== Full state list ==="
-          terraform state list 2>/dev/null || echo "(state empty or unreachable)"
-          echo "============="
+          echo "Services to destroy: $DESTROY_SVCS"
+          echo "All deployed services: $ALL_SVCS"
 
-          declare -A M
-          M[vpc]="module.vpc" M[ec2]="module.ec2" M[rds]="module.rds"
-          M[s3]="module.s3" M[iam]="module.iam" M[lambda]="module.lambda"
-          M[ecs]="module.ecs" M[alb]="module.alb" M[route53]="module.route53"
-          M[ssm]="module.ssm" M[ecr]="module.ecr" M[sns]="module.sns"
-          M[sqs]="module.sqs" M[cloudfront]="module.cloudfront"
-          M[secretsmanager]="module.secretsmanager"
+          # Refresh state using ALL deployed services
+          terraform plan \
+            -var="environment=${{ github.event.inputs.environment }}" \
+            -var="region=${{ github.event.inputs.region }}" \
+            -var="enabled_services=$ALL_SVCS" \
+            -refresh-only -input=false -no-color 2>/dev/null || true
 
-          # NOTE: Do NOT run terraform plan/refresh here — it can silently
-          # remove resources from the local state view if enabled_services
-          # doesn't include all deployed modules. Build FLAGS directly from
-          # the raw state list instead.
+          # Map service name -> terraform resource prefixes
+          declare -A RESOURCE_MAP
+          RESOURCE_MAP[vpc]="aws_vpc.main aws_subnet.public aws_subnet.private aws_internet_gateway.igw data.aws_availability_zones.available"
+          RESOURCE_MAP[ec2]="aws_instance.web aws_security_group.web data.aws_ami.amazon_linux"
+          RESOURCE_MAP[rds]="aws_db_instance.main aws_db_subnet_group.main aws_security_group.rds random_password.db aws_ssm_parameter.db_password"
+          RESOURCE_MAP[s3]="aws_s3_bucket.main aws_s3_bucket_versioning.main aws_s3_bucket_public_access_block.main random_id.suffix"
+          RESOURCE_MAP[iam]="aws_iam_role.app aws_iam_role_policy.app_s3 aws_iam_role_policy_attachment.ssm aws_iam_instance_profile.app"
+          RESOURCE_MAP[lambda]="aws_lambda_function.app aws_iam_role.lambda aws_iam_role_policy_attachment.lambda_basic aws_security_group.lambda"
+          RESOURCE_MAP[ecs]="aws_ecs_cluster.main aws_ecs_cluster_capacity_providers.main aws_security_group.ecs"
+          RESOURCE_MAP[alb]="aws_lb.main aws_lb_target_group.main aws_lb_listener.http"
+          RESOURCE_MAP[route53]="aws_route53_zone.main"
+          RESOURCE_MAP[ssm]="aws_ssm_parameter.db_password"
+          RESOURCE_MAP[ecr]="aws_ecr_repository.app"
+          RESOURCE_MAP[sns]="aws_sns_topic.main"
+          RESOURCE_MAP[sqs]="aws_sqs_queue.main"
+          RESOURCE_MAP[cloudfront]="aws_cloudfront_distribution.main"
+          RESOURCE_MAP[secretsmanager]="aws_secretsmanager_secret.main"
 
-          FLAGS=""
+          TARGET_FLAGS=""
           IFS=',' read -ra SVCS <<< "$DESTROY_SVCS"
           for SVC in "${SVCS[@]}"; do
             SVC=$(echo "$SVC" | xargs)
-            PREFIX="${M[$SVC]}"
-            [ -z "$PREFIX" ] && continue
-            echo "Looking for resources matching: ${PREFIX}"
-            while IFS= read -r R; do
-              if [ -n "$R" ]; then
-                FLAGS="$FLAGS -target='$R'"
-                echo "  -> targeted: $R"
+            PREFIXES="${RESOURCE_MAP[$SVC]}"
+            [ -z "$PREFIXES" ] && continue
+            echo "  Looking up state for: $SVC"
+            for PREFIX in $PREFIXES; do
+              RESOURCES=$(terraform state list 2>/dev/null | grep "^${PREFIX}" || true)
+              if [ -n "$RESOURCES" ]; then
+                while IFS= read -r R; do
+                  echo "    Found: $R"
+                  TARGET_FLAGS="$TARGET_FLAGS -target='$R'"
+                done <<< "$RESOURCES"
               fi
-            done <<< "$(terraform state list 2>/dev/null | grep "^${PREFIX}" || true)"
+            done
           done
 
-          echo "=== Final FLAGS ==="
-          echo "$FLAGS"
-          echo "flags=$FLAGS" >> $GITHUB_OUTPUT
+          echo "flags=$TARGET_FLAGS" >> $GITHUB_OUTPUT
+          echo "Target flags: $TARGET_FLAGS"
 
       - name: Destroy plan preview
         working-directory: ${{ env.TF_DIR }}
         run: |
           ALL_SVCS="${{ needs.prerequisites.outputs.all_deployed_services }}"
+          FLAGS="${{ steps.targets.outputs.flags }}"
+
+          if [ -z "$FLAGS" ]; then
+            echo "No resources found in state for the selected services."
+            exit 0
+          fi
+
           eval terraform plan -destroy \
             -var="environment=${{ github.event.inputs.environment }}" \
             -var="region=${{ github.event.inputs.region }}" \
             -var="enabled_services=$ALL_SVCS" \
-            ${{ steps.targets.outputs.flags }} \
-            -out=destroy-plan.out -input=false -no-color \
+            $FLAGS \
+            -out=destroy-plan.out \
+            -input=false -no-color \
             2>&1 | tee destroy-preview.txt || true
-          echo "Resources to be destroyed:"
-          grep "will be destroyed\|to destroy" destroy-preview.txt | head -20 || echo "No resources found in state"
+
+          echo "--- Resources that WILL be destroyed ---"
+          grep "will be destroyed|to destroy" destroy-preview.txt | head -30 || echo "No matching resources found in state"
 
       - name: Upload destroy plan
         uses: actions/upload-artifact@v4
@@ -442,13 +473,15 @@ jobs:
       - name: Job summary
         run: |
           echo "## Destroy Plan Preview" >> $GITHUB_STEP_SUMMARY
-          echo "**Targeting:** ${{ needs.prerequisites.outputs.services_to_destroy }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Keeping:** All other services untouched" >> $GITHUB_STEP_SUMMARY
+          echo "**Targeting (will delete):** `${{ needs.prerequisites.outputs.services_to_destroy }}`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Keeping alive:** All other deployed services" >> $GITHUB_STEP_SUMMARY
 
 # ============================================================================
 #  JOB 6 — destroy
-#  Runs selective destroy using -target flags
-#  Depends on: destroy-plan (only runs if destroy-plan succeeded)
+#  Selectively destroys ONLY the targeted resources using -target flags.
+#  Only runs when destroy-plan succeeded.
+#  Depends on: destroy-plan
 # ============================================================================
   destroy:
     name: 'Destroy'
@@ -476,9 +509,7 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}
-        run: |
-          terraform init -input=false -no-color \
-            -backend-config="key=${{ github.event.inputs.environment }}/terraform.tfstate"
+        run: terraform init -input=false -no-color
 
       - name: Select workspace
         working-directory: ${{ env.TF_DIR }}
@@ -491,31 +522,6 @@ jobs:
         run: |
           DESTROY_SVCS="${{ needs.prerequisites.outputs.services_to_destroy }}"
           ALL_SVCS="${{ needs.prerequisites.outputs.all_deployed_services }}"
-          declare -A M
-          M[vpc]="module.vpc" M[ec2]="module.ec2" M[rds]="module.rds"
-          M[s3]="module.s3" M[iam]="module.iam" M[lambda]="module.lambda"
-          M[ecs]="module.ecs" M[alb]="module.alb" M[route53]="module.route53"
-          M[ssm]="module.ssm" M[ecr]="module.ecr" M[sns]="module.sns"
-          M[sqs]="module.sqs" M[cloudfront]="module.cloudfront"
-          M[secretsmanager]="module.secretsmanager"
-
-          FLAGS=""
-          IFS=',' read -ra SVCS <<< "$DESTROY_SVCS"
-          for SVC in "${SVCS[@]}"; do
-            SVC=$(echo "$SVC" | xargs)
-            PREFIX="${M[$SVC]}"
-            [ -z "$PREFIX" ] && continue
-            while IFS= read -r R; do
-              [ -n "$R" ] && FLAGS="$FLAGS -target='$R'"
-            done <<< "$(terraform state list 2>/dev/null | grep "^${PREFIX}" || true)"
-          done
-
-          if [ -z "$FLAGS" ]; then
-            echo "Nothing to destroy — no matching resources found in Terraform state."
-            echo "These services may not have been applied yet, or were already destroyed."
-            echo "DESTROY_RESULT=nothing_found" >> "$GITHUB_ENV"
-            exit 0
-          fi
 
           echo "========================================"
           echo "  Selective Terraform Destroy"
@@ -524,17 +530,62 @@ jobs:
           echo "  Environment: ${{ github.event.inputs.environment }}"
           echo "========================================"
 
+          # Map service name -> terraform resource prefixes
+          declare -A RESOURCE_MAP
+          RESOURCE_MAP[vpc]="aws_vpc.main aws_subnet.public aws_subnet.private aws_internet_gateway.igw data.aws_availability_zones.available"
+          RESOURCE_MAP[ec2]="aws_instance.web aws_security_group.web data.aws_ami.amazon_linux"
+          RESOURCE_MAP[rds]="aws_db_instance.main aws_db_subnet_group.main aws_security_group.rds random_password.db aws_ssm_parameter.db_password"
+          RESOURCE_MAP[s3]="aws_s3_bucket.main aws_s3_bucket_versioning.main aws_s3_bucket_public_access_block.main random_id.suffix"
+          RESOURCE_MAP[iam]="aws_iam_role.app aws_iam_role_policy.app_s3 aws_iam_role_policy_attachment.ssm aws_iam_instance_profile.app"
+          RESOURCE_MAP[lambda]="aws_lambda_function.app aws_iam_role.lambda aws_iam_role_policy_attachment.lambda_basic aws_security_group.lambda"
+          RESOURCE_MAP[ecs]="aws_ecs_cluster.main aws_ecs_cluster_capacity_providers.main aws_security_group.ecs"
+          RESOURCE_MAP[alb]="aws_lb.main aws_lb_target_group.main aws_lb_listener.http"
+          RESOURCE_MAP[route53]="aws_route53_zone.main"
+          RESOURCE_MAP[ssm]="aws_ssm_parameter.db_password"
+          RESOURCE_MAP[ecr]="aws_ecr_repository.app"
+          RESOURCE_MAP[sns]="aws_sns_topic.main"
+          RESOURCE_MAP[sqs]="aws_sqs_queue.main"
+          RESOURCE_MAP[cloudfront]="aws_cloudfront_distribution.main"
+          RESOURCE_MAP[secretsmanager]="aws_secretsmanager_secret.main"
+
+          # Build -target flags from actual terraform state
+          TARGET_FLAGS=""
+          IFS=',' read -ra SVCS <<< "$DESTROY_SVCS"
+          for SVC in "${SVCS[@]}"; do
+            SVC=$(echo "$SVC" | xargs)
+            PREFIXES="${RESOURCE_MAP[$SVC]}"
+            [ -z "$PREFIXES" ] && continue
+            for PREFIX in $PREFIXES; do
+              RESOURCES=$(terraform state list 2>/dev/null | grep "^${PREFIX}" || true)
+              [ -z "$RESOURCES" ] && continue
+              while IFS= read -r R; do
+                echo "  Targeting: $R"
+                TARGET_FLAGS="$TARGET_FLAGS -target='$R'"
+              done <<< "$RESOURCES"
+            done
+          done
+
+          if [ -z "$TARGET_FLAGS" ]; then
+            echo "Nothing to destroy — no matching resources found in Terraform state."
+            echo "These services may not have been applied yet, or were already destroyed."
+            exit 0
+          fi
+
+          echo ""
+          echo "Running selective destroy..."
           eval terraform destroy \
             -var="environment=${{ github.event.inputs.environment }}" \
             -var="region=${{ github.event.inputs.region }}" \
             -var="enabled_services=$ALL_SVCS" \
-            $FLAGS \
-            -auto-approve -input=false -no-color
+            $TARGET_FLAGS \
+            -auto-approve \
+            -input=false \
+            -no-color
 
+          echo ""
           echo "Selective destroy complete!"
           echo "Destroyed: $DESTROY_SVCS"
           echo "All other services remain untouched."
-          echo "DESTROY_RESULT=success" >> "$GITHUB_ENV"
 
       - name: Job summary
         run: |
@@ -543,4 +594,5 @@ jobs:
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Status | Completed |" >> $GITHUB_STEP_SUMMARY
           echo "| Destroyed | ${{ needs.prerequisites.outputs.services_to_destroy }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Kept alive | All other services |" >> $GITHUB_STEP_SUMMARY
           echo "| Environment | ${{ github.event.inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
