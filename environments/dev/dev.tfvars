@@ -9,3 +9,6 @@ ec2_instance_count = 1
 rds_instance_class = "db.t3.micro"
 
 vpc_cidr           = "10.0.0.0/16"
+
+existing_vpc_id    = "vpc-068a8a7abb5699721"
+existing_subnet_ids = ["subnet-007e8da24c6b2168c"]
