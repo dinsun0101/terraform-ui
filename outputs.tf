@@ -1,20 +1,27 @@
 output "vpc_id" {
-  description = "VPC ID"
-  value       = length(module.vpc) > 0 ? module.vpc[0].vpc_id : null
+  value = length(aws_vpc.main) > 0 ? aws_vpc.main[0].id : null
+}
+
+output "public_subnet_ids" {
+  value = aws_subnet.public[*].id
+}
+
+output "private_subnet_ids" {
+  value = aws_subnet.private[*].id
 }
 
 output "ec2_instance_ids" {
-  description = "EC2 instance IDs"
-  value       = length(module.ec2) > 0 ? module.ec2[0].instance_ids : []
-}
-
-output "rds_endpoint" {
-  description = "RDS endpoint"
-  value       = length(module.rds) > 0 ? module.rds[0].endpoint : null
-  sensitive   = true
+  value = aws_instance.web[*].id
 }
 
 output "s3_bucket_name" {
-  description = "S3 bucket name"
-  value       = length(module.s3) > 0 ? module.s3[0].bucket_name : null
+  value = length(aws_s3_bucket.main) > 0 ? aws_s3_bucket.main[0].bucket : null
+}
+
+output "ecs_cluster_name" {
+  value = length(aws_ecs_cluster.main) > 0 ? aws_ecs_cluster.main[0].name : null
+}
+
+output "iam_role_arn" {
+  value = length(aws_iam_role.app) > 0 ? aws_iam_role.app[0].arn : null
 }
