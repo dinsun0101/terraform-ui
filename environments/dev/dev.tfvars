@@ -10,5 +10,5 @@ rds_instance_class = "db.t3.micro"
 
 vpc_cidr           = "10.0.0.0/16"
 
-vpc_id     = "vpc-0ad99928c11a78b8d"
-subnet_ids = ["subnet-08765c174a89bad94"]
+# vpc_id     = "vpc-0ad99928c11a78b8d"
+# subnet_ids = ["subnet-08765c174a89bad94"]
