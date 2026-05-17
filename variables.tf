@@ -36,13 +36,13 @@ variable "vpc_cidr" {
   default     = "10.0.0.0/16"
 }
 
-variable "existing_vpc_id" {
+variable "vpc_id" {
   description = "Use an existing VPC instead of creating one (when vpc not in enabled_services)"
   type        = string
   default     = ""
 }
 
-variable "existing_subnet_ids" {
+variable "subnet_ids" {
   description = "Existing subnet IDs to use when not deploying a new VPC"
   type        = list(string)
   default     = []
